@@ -11,7 +11,9 @@ import android.util.Log
 
 import java.io.File
 import android.os.AsyncTask
-import android.widget.TextView
+import android.support.annotation.UiThread
+import com.github.kittinunf.fuel.Fuel
+import com.github.kittinunf.fuel.android.extension.responseJson
 import com.google.api.client.googleapis.json.GoogleJsonResponseException
 import com.google.api.services.vision.v1.Vision
 import java.io.IOException
@@ -21,10 +23,17 @@ import com.google.api.services.vision.v1.VisionRequest
 import com.google.api.services.vision.v1.VisionRequestInitializer
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.client.extensions.android.http.AndroidHttp
-import com.google.api.client.http.HttpTransport
 import com.google.api.services.vision.v1.model.*
 import java.io.ByteArrayOutputStream
 
+import com.google.cloud.translate.Translate;
+import com.google.cloud.translate.Translate.TranslateOption;
+import com.google.cloud.translate.TranslateOptions;
+import com.google.cloud.translate.Translation;
+
+//data class TranslationResponse(val translations: Array<Translations>)
+//
+//data class Translations(val translatedText: String)
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,7 +42,6 @@ class MainActivity : AppCompatActivity() {
     val CLOUD_VISION_API_KEY = "AIzaSyD9lvoSUOqELgKIiiDwhD6Vo0T19JsOqOk"
     val ANDROID_CERT_HEADER = "X-Android-Cert"
     val ANDROID_PACKAGE_HEADER = "X-Android-Package"
-    val MAX_LABEL_RESULTS = 10
 
 
 
@@ -151,11 +159,27 @@ class MainActivity : AppCompatActivity() {
                 annotateImageRequest.features = object : ArrayList<Feature>() {
                     init {
                         val labelDetection = Feature()
-                        labelDetection.setType("LABEL_DETECTION")
-                        labelDetection.setMaxResults(MAX_LABEL_RESULTS)
+                        //labelDetection.setType("LABEL_DETECTION")
+                        labelDetection.setType("TEXT_DETECTION")
+                        //labelDetection.setMaxResults(MAX_LABEL_RESULTS)
                         add(labelDetection)
                     }
                 }
+
+                val imageContext = ImageContext()
+                //imageContext.languageHints = listOf("es-t-i0-handwrit")
+                imageContext.languageHints = listOf("es-419")
+
+                annotateImageRequest.imageContext = imageContext
+
+
+//                annotateImageRequest.imageContext = object : ArrayList<ImageContext> {
+//                    init {
+//                        val imageContext = ImageContext()
+//                        imageContext.setLanguageHints(listOf("es-t-i0-handwrit"))
+//                        add(imageContext)
+//                    }
+//                }
 
                 // Add the list of one thing to the request
                 add(annotateImageRequest)
@@ -192,26 +216,68 @@ class MainActivity : AppCompatActivity() {
             return "Cloud Vision API request failed. Check logs for details."
         }
 
-        override fun onPostExecute(result: String) {
+        override fun onPostExecute(resultImageText: String) {
+            val CLOUD_TRANSLATE_API_KEY = "AIzaSyD9lvoSUOqELgKIiiDwhD6Vo0T19JsOqOk"
             val activity = mActivityWeakReference.get()
             if (!activity!!.isFinishing) {
                 val imageDetail = activity.image_details
-                imageDetail?.text = result
+                //imageDetail?.text = result
+
+//                val translate = TranslateOptions.getDefaultInstance().service
+//
+//                // The text to translate
+//                val text = result
+//
+//                // Translates some text into Russian
+//                val translation = translate.translate(
+//                        text,
+//                        TranslateOption.sourceLanguage("es"),
+//                        TranslateOption.targetLanguage("en"))
+//
+//                imageDetail?.text = translation.translatedText
+                    Log.d("boy", resultImageText)
+                Fuel.post("https://translation.googleapis.com/language/translate/v2?key=${CLOUD_TRANSLATE_API_KEY}&q=${resultImageText}&target=en&source=es").responseJson { request, response, result ->
+                    Log.d("boy", result.toString())
+
+                    result.fold(success = {json ->
+
+                        val data = json.obj().getJSONObject("data")
+                        val translations = data.getJSONArray("translations")
+                        val translatedText = translations.getJSONObject(0).getString("translatedText")
+                        imageDetail?.text = translatedText
+
+
+                }, failure = {
+                        Log.d("boy", "translation failed")
+                    })
+
+                }
             }
         }
 
         private fun convertResponseToString(response: BatchAnnotateImagesResponse): String {
-            val message = StringBuilder("I found these things:\n\n")
+            val message = StringBuilder("")
 
-            val labels = response.responses[0].labelAnnotations
-            if (labels != null) {
-                for (label in labels) {
-                    message.append(String.format(Locale.US, "%.3f: %s", label.score, label.description))
-                    message.append("\n")
-                }
-            } else {
+            val annotations = response.responses[0].textAnnotations
+
+
+            if (annotations == null || annotations.size == 0) {
                 message.append("nothing")
             }
+            else {
+                Log.d("boy", annotations[0].description)
+                message.append(annotations[0].description)
+            }
+
+            //val image_text = response.responses[0].textAnnotations[0].description
+
+ //           val labels = response.responses[0].labelAnnotations
+//            if (labels != null) {
+//                for (label in labels) {
+//                    message.append(String.format(Locale.US, "%.3f: %s", label.score, label.description))
+//                    message.append("\n")
+//                }
+//            }
 
             return message.toString()
         }
